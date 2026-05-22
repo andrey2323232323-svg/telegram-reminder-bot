@@ -83,6 +83,12 @@ def parse_reminder(raw_text: str, timezone_name: str) -> ParsedReminder | None:
     if clause_reminder:
         return clause_reminder
 
+    weekday_text = _find_weekday_text(normalized)
+    if weekday_text and not _has_explicit_time(normalized):
+        raise ReminderNeedsClarification(
+            f"В какое время {weekday_text} вы хотите, чтобы я напомнил?"
+        )
+
     dt = _find_datetime(normalized, now, timezone_name)
     if dt is None:
         return None
@@ -362,6 +368,16 @@ def _parse_weekday_date(text: str, now: datetime) -> tuple[str, datetime] | None
         remind_at += timedelta(days=7)
 
     return match.group(0), remind_at
+
+
+def _find_weekday_text(text: str) -> str | None:
+    weekday_pattern = "|".join(WEEKDAYS)
+    match = re.search(
+        rf"\b(?:(?:в|во)\s+)?({weekday_pattern})\b",
+        text,
+        re.IGNORECASE,
+    )
+    return match.group(0) if match else None
 
 
 def _parse_time_today(text: str, now: datetime) -> tuple[str, datetime] | None:
