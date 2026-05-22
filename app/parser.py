@@ -271,6 +271,10 @@ def _find_datetime(text: str, now: datetime, timezone_name: str) -> tuple[str, d
     if weekday_date:
         return weekday_date
 
+    time_today = _parse_time_today(text, now)
+    if time_today:
+        return time_today
+
     found = search_dates(
         text,
         languages=["ru"],
@@ -358,6 +362,50 @@ def _parse_weekday_date(text: str, now: datetime) -> tuple[str, datetime] | None
         remind_at += timedelta(days=7)
 
     return match.group(0), remind_at
+
+
+def _parse_time_today(text: str, now: datetime) -> tuple[str, datetime] | None:
+    if _contains_date_hint(text):
+        return None
+
+    numeric = re.search(r"\b(?:в|к)\s+(\d{1,2})(?::(\d{2})|[.](\d{2}))?\b", text, re.IGNORECASE)
+    if numeric:
+        hour = int(numeric.group(1))
+        minute = int(numeric.group(2) or numeric.group(3) or 0)
+        return _time_today_result(numeric.group(0), now, hour, minute)
+
+    spoken_match = re.search(
+        r"\b(?:в|к)\s+([а-яё]+(?:\s+[а-яё]+){0,2})(?:\s+час(?:а|ов)?)?\b",
+        text,
+        re.IGNORECASE,
+    )
+    if spoken_match:
+        spoken_time = _parse_spoken_time(spoken_match.group(0))
+        if spoken_time:
+            hour, minute = spoken_time
+            return _time_today_result(spoken_match.group(0), now, hour, minute)
+
+    return None
+
+
+def _time_today_result(matched_text: str, now: datetime, hour: int, minute: int) -> tuple[str, datetime] | None:
+    if hour > 23 or minute > 59:
+        return None
+
+    remind_at = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if remind_at <= now:
+        remind_at += timedelta(days=1)
+
+    return matched_text, remind_at
+
+
+def _contains_date_hint(text: str) -> bool:
+    normalized = text.lower()
+    return bool(
+        re.search("|".join(rf"\b{re.escape(day)}\b" for day in WEEKDAYS), normalized)
+        or re.search(r"\b(сегодня|завтра|послезавтра|недел[яюи]|месяц|января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\b", normalized)
+        or re.search(r"\b\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?\b", normalized)
+    )
 
 
 def _has_explicit_time(text: str) -> bool:
