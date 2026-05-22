@@ -46,6 +46,10 @@ async def start(message: Message) -> None:
 
 @router.message(Command("list"))
 async def list_reminders(message: Message, repo: ReminderRepository) -> None:
+    await send_active_reminders(message, repo)
+
+
+async def send_active_reminders(message: Message, repo: ReminderRepository) -> None:
     reminders = await repo.list_pending(message.chat.id)
     if not reminders:
         await message.answer("Активных напоминаний нет.")
@@ -121,6 +125,8 @@ async def handle_text(
     source_text = message.text or ""
     if await handle_cancel_phrase(message, source_text, repo, scheduler, pending_clarifications):
         return
+    if await handle_list_phrase(message, source_text, repo):
+        return
 
     pending_text = pending_clarifications.get(message.chat.id)
     if pending_text and is_time_clarification(source_text):
@@ -180,6 +186,27 @@ async def handle_cancel_phrase(
 
         scheduler.remove(reminder.id)
         await message.answer(f"Готово, отменил последнее напоминание: {reminder.text}")
+        return True
+
+    return False
+
+
+async def handle_list_phrase(
+    message: Message,
+    source_text: str,
+    repo: ReminderRepository,
+) -> bool:
+    normalized = " ".join(source_text.strip().lower().split())
+    if normalized in {
+        "покажи все напоминания",
+        "покажи активные напоминания",
+        "пришли все напоминания",
+        "пришли активные напоминания",
+        "все напоминания",
+        "активные напоминания",
+        "список напоминаний",
+    }:
+        await send_active_reminders(message, repo)
         return True
 
     return False

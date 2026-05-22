@@ -92,8 +92,7 @@ def apply_time_clarification(original_text: str, time_text: str) -> str | None:
     reminder_prefix = match.group(1)
     remind_clause = match.group(2).strip()
     task_clause = match.group(3)
-    if not _has_explicit_time(normalized_time):
-        normalized_time = f"в {normalized_time}"
+    normalized_time = _normalize_time_clarification(normalized_time)
 
     return f"{reminder_prefix}{remind_clause} {normalized_time}{task_clause}"
 
@@ -108,6 +107,23 @@ def is_time_clarification(text: str) -> bool:
         )
         or re.fullmatch(r"(?:утром|днем|днём|вечером|ночью|в полдень|в полночь)", normalized)
     )
+
+
+def _normalize_time_clarification(text: str) -> str:
+    normalized = " ".join(text.strip().lower().split())
+
+    hour_only = re.fullmatch(r"(?:в\s+|к\s+)?(\d{1,2})", normalized)
+    if hour_only:
+        return f"в {int(hour_only.group(1)):02d}:00"
+
+    hour_minute = re.fullmatch(r"(?:в\s+|к\s+)?(\d{1,2})[:.](\d{2})", normalized)
+    if hour_minute:
+        return f"в {int(hour_minute.group(1)):02d}:{hour_minute.group(2)}"
+
+    if not _has_explicit_time(normalized):
+        return f"в {normalized}"
+
+    return normalized
 
 
 def _parse_remind_clause_before_what(
