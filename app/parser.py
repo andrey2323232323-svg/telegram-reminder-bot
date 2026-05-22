@@ -59,6 +59,11 @@ def parse_reminder(raw_text: str, timezone_name: str) -> ParsedReminder | None:
         return None
 
     matched_text, remind_at = dt
+    if not _has_explicit_time(matched_text):
+        raise ReminderNeedsClarification(
+            f"В какое время {matched_text} вы хотите, чтобы я напомнил?"
+        )
+
     if remind_at <= now:
         return None
 
@@ -73,7 +78,11 @@ def parse_reminder(raw_text: str, timezone_name: str) -> ParsedReminder | None:
     )
 
 
-def apply_time_clarification(original_text: str, time_text: str) -> str | None:
+def apply_time_clarification(
+    original_text: str,
+    time_text: str,
+    timezone_name: str = "Europe/Moscow",
+) -> str | None:
     normalized_original = " ".join(original_text.strip().split())
     normalized_time = " ".join(time_text.strip().split())
     if not normalized_original or not normalized_time:
@@ -81,6 +90,30 @@ def apply_time_clarification(original_text: str, time_text: str) -> str | None:
     if not is_time_clarification(normalized_time):
         return None
 
+    clause_text = _apply_time_to_remind_clause(normalized_original, normalized_time)
+    if clause_text:
+        return clause_text
+
+    now = datetime.now(ZoneInfo(timezone_name))
+    dt = _find_datetime(normalized_original, now, timezone_name)
+    if dt is None:
+        return None
+
+    matched_text, _ = dt
+    if _has_explicit_time(matched_text):
+        return None
+
+    normalized_time = _normalize_time_clarification(normalized_time)
+    return re.sub(
+        re.escape(matched_text),
+        f"{matched_text} {normalized_time}",
+        normalized_original,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+
+
+def _apply_time_to_remind_clause(normalized_original: str, normalized_time: str) -> str | None:
     match = re.match(
         r"^(\s*(?:напомни(?:\s+мне)?|поставь\s+напоминание|создай\s+напоминание)\s+)(.+?)(\s*,?\s+что\s+.+)$",
         normalized_original,
@@ -92,9 +125,8 @@ def apply_time_clarification(original_text: str, time_text: str) -> str | None:
     reminder_prefix = match.group(1)
     remind_clause = match.group(2).strip()
     task_clause = match.group(3)
-    normalized_time = _normalize_time_clarification(normalized_time)
 
-    return f"{reminder_prefix}{remind_clause} {normalized_time}{task_clause}"
+    return f"{reminder_prefix}{remind_clause} {_normalize_time_clarification(normalized_time)}{task_clause}"
 
 
 def is_time_clarification(text: str) -> bool:

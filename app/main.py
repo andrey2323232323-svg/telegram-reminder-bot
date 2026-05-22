@@ -130,7 +130,7 @@ async def handle_text(
 
     pending_text = pending_clarifications.get(message.chat.id)
     if pending_text and is_time_clarification(source_text):
-        clarified_text = apply_time_clarification(pending_text, source_text)
+        clarified_text = apply_time_clarification(pending_text, source_text, settings.timezone)
         if clarified_text:
             saved = await create_reminder_from_text(
                 message,
