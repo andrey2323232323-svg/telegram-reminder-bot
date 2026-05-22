@@ -25,6 +25,23 @@ FILLER_PATTERNS = [
     r"^\s*создай\s+напоминание\s+",
 ]
 
+WEEKDAYS = {
+    "понедельник": 0,
+    "понедельника": 0,
+    "вторник": 1,
+    "вторника": 1,
+    "среду": 2,
+    "среда": 2,
+    "четверг": 3,
+    "четверга": 3,
+    "пятницу": 4,
+    "пятница": 4,
+    "субботу": 5,
+    "суббота": 5,
+    "воскресенье": 6,
+    "воскресенья": 6,
+}
+
 
 def parse_reminder(raw_text: str, timezone_name: str) -> ParsedReminder | None:
     normalized = " ".join(raw_text.strip().split())
@@ -136,6 +153,10 @@ def _find_datetime(text: str, now: datetime, timezone_name: str) -> tuple[str, d
     if relative:
         return relative
 
+    weekday_with_time = _parse_weekday_with_time(text, now)
+    if weekday_with_time:
+        return weekday_with_time
+
     found = search_dates(
         text,
         languages=["ru"],
@@ -178,6 +199,31 @@ def _parse_relative(text: str, now: datetime) -> tuple[str, datetime] | None:
         delta = timedelta(weeks=amount)
 
     return match.group(0), now + delta
+
+
+def _parse_weekday_with_time(text: str, now: datetime) -> tuple[str, datetime] | None:
+    weekday_pattern = "|".join(WEEKDAYS)
+    match = re.search(
+        rf"\b(?:в\s+)?({weekday_pattern})\b.*?\b(?:в|к)\s+(\d{{1,2}})(?::(\d{{2}})|[.](\d{{2}}))?",
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    weekday_text = match.group(1).lower()
+    hour = int(match.group(2))
+    minute = int(match.group(3) or match.group(4) or 0)
+    if hour > 23 or minute > 59:
+        return None
+
+    target_weekday = WEEKDAYS[weekday_text]
+    days_ahead = (target_weekday - now.weekday()) % 7
+    remind_at = now.replace(hour=hour, minute=minute, second=0, microsecond=0) + timedelta(days=days_ahead)
+    if remind_at <= now:
+        remind_at += timedelta(days=7)
+
+    return match.group(0), remind_at
 
 
 def _has_explicit_time(text: str) -> bool:
