@@ -155,7 +155,7 @@ async def process_text_request(
                 clarified_text,
                 repo,
                 scheduler,
-                settings.timezone,
+                timezone,
                 pending_clarifications,
                 store_clarification=False,
             )
@@ -168,7 +168,7 @@ async def process_text_request(
         source_text,
         repo,
         scheduler,
-        settings.timezone,
+        timezone,
         pending_clarifications,
     )
 
