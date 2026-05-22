@@ -104,7 +104,7 @@ async def handle_voice(
         return
 
     await message.answer(f"Расшифровал, {display_name(message)}: {text}")
-    await create_reminder_from_text(
+    await process_text_request(
         message,
         text,
         repo,
@@ -123,6 +123,24 @@ async def handle_text(
     pending_clarifications: dict[int, str],
 ) -> None:
     source_text = message.text or ""
+    await process_text_request(
+        message,
+        source_text,
+        repo,
+        scheduler,
+        settings.timezone,
+        pending_clarifications,
+    )
+
+
+async def process_text_request(
+    message: Message,
+    source_text: str,
+    repo: ReminderRepository,
+    scheduler: ReminderScheduler,
+    timezone: str,
+    pending_clarifications: dict[int, str],
+) -> None:
     if await handle_cancel_phrase(message, source_text, repo, scheduler, pending_clarifications):
         return
     if await handle_list_phrase(message, source_text, repo):
@@ -130,7 +148,7 @@ async def handle_text(
 
     pending_text = pending_clarifications.get(message.chat.id)
     if pending_text and is_time_clarification(source_text):
-        clarified_text = apply_time_clarification(pending_text, source_text, settings.timezone)
+        clarified_text = apply_time_clarification(pending_text, source_text, timezone)
         if clarified_text:
             saved = await create_reminder_from_text(
                 message,
