@@ -42,6 +42,35 @@ WEEKDAYS = {
     "воскресенья": 6,
 }
 
+RU_NUMBERS = {
+    "ноль": 0,
+    "один": 1,
+    "одну": 1,
+    "два": 2,
+    "две": 2,
+    "три": 3,
+    "четыре": 4,
+    "пять": 5,
+    "шесть": 6,
+    "семь": 7,
+    "восемь": 8,
+    "девять": 9,
+    "десять": 10,
+    "одиннадцать": 11,
+    "двенадцать": 12,
+    "тринадцать": 13,
+    "четырнадцать": 14,
+    "пятнадцать": 15,
+    "шестнадцать": 16,
+    "семнадцать": 17,
+    "восемнадцать": 18,
+    "девятнадцать": 19,
+    "двадцать": 20,
+    "двадцать один": 21,
+    "двадцать два": 22,
+    "двадцать три": 23,
+}
+
 
 def parse_reminder(raw_text: str, timezone_name: str) -> ParsedReminder | None:
     normalized = " ".join(raw_text.strip().split())
@@ -130,7 +159,10 @@ def _apply_time_to_remind_clause(normalized_original: str, normalized_time: str)
 
 
 def is_time_clarification(text: str) -> bool:
-    normalized = " ".join(text.strip().lower().split())
+    normalized = _clean_phrase(text)
+    if _parse_spoken_time(normalized):
+        return True
+
     return bool(
         re.fullmatch(r"(?:в\s+|к\s+)?\d{1,2}(?::\d{2}|[.]\d{2})?", normalized)
         or re.fullmatch(
@@ -142,7 +174,12 @@ def is_time_clarification(text: str) -> bool:
 
 
 def _normalize_time_clarification(text: str) -> str:
-    normalized = " ".join(text.strip().lower().split())
+    normalized = _clean_phrase(text)
+
+    spoken_time = _parse_spoken_time(normalized)
+    if spoken_time:
+        hour, minute = spoken_time
+        return f"в {hour:02d}:{minute:02d}"
 
     hour_only = re.fullmatch(r"(?:в\s+|к\s+)?(\d{1,2})", normalized)
     if hour_only:
@@ -156,6 +193,31 @@ def _normalize_time_clarification(text: str) -> str:
         return f"в {normalized}"
 
     return normalized
+
+
+def _clean_phrase(text: str) -> str:
+    return " ".join(text.strip().lower().strip(" .,!?").split())
+
+
+def _parse_spoken_time(text: str) -> tuple[int, int] | None:
+    normalized = re.sub(r"^(?:в|к)\s+", "", text)
+    normalized = re.sub(r"\s+час(?:а|ов)?$", "", normalized)
+    normalized = normalized.replace("ноль ноль", "ноль")
+
+    if normalized in RU_NUMBERS:
+        return RU_NUMBERS[normalized], 0
+
+    parts = normalized.split()
+    if len(parts) >= 2:
+        hour_text = " ".join(parts[:-1])
+        minute_text = parts[-1]
+        if hour_text in RU_NUMBERS and minute_text in RU_NUMBERS:
+            hour = RU_NUMBERS[hour_text]
+            minute = RU_NUMBERS[minute_text]
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                return hour, minute
+
+    return None
 
 
 def _parse_remind_clause_before_what(

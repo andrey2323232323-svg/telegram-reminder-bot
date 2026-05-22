@@ -180,7 +180,7 @@ async def handle_cancel_phrase(
     scheduler: ReminderScheduler,
     pending_clarifications: dict[int, str],
 ) -> bool:
-    normalized = " ".join(source_text.strip().lower().split())
+    normalized = normalize_command_text(source_text)
     if normalized == "отмени все напоминания":
         reminder_ids = await repo.cancel_all(message.chat.id)
         for reminder_id in reminder_ids:
@@ -214,7 +214,7 @@ async def handle_list_phrase(
     source_text: str,
     repo: ReminderRepository,
 ) -> bool:
-    normalized = " ".join(source_text.strip().lower().split())
+    normalized = normalize_command_text(source_text)
     if normalized in {
         "покажи все напоминания",
         "покажи активные напоминания",
@@ -228,6 +228,10 @@ async def handle_list_phrase(
         return True
 
     return False
+
+
+def normalize_command_text(text: str) -> str:
+    return " ".join(text.strip().lower().strip(" .,!?").split())
 
 
 async def create_reminder_from_text(
