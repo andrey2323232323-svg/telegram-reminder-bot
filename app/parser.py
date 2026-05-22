@@ -59,7 +59,7 @@ def parse_reminder(raw_text: str, timezone_name: str) -> ParsedReminder | None:
         return None
 
     matched_text, remind_at = dt
-    if not _has_explicit_time(matched_text):
+    if _needs_time_clarification(normalized, matched_text, remind_at):
         raise ReminderNeedsClarification(
             f"В какое время {matched_text} вы хотите, чтобы я напомнил?"
         )
@@ -205,6 +205,10 @@ def _find_datetime(text: str, now: datetime, timezone_name: str) -> tuple[str, d
     if weekday_with_time:
         return weekday_with_time
 
+    weekday_date = _parse_weekday_date(text, now)
+    if weekday_date:
+        return weekday_date
+
     found = search_dates(
         text,
         languages=["ru"],
@@ -252,7 +256,7 @@ def _parse_relative(text: str, now: datetime) -> tuple[str, datetime] | None:
 def _parse_weekday_with_time(text: str, now: datetime) -> tuple[str, datetime] | None:
     weekday_pattern = "|".join(WEEKDAYS)
     match = re.search(
-        rf"\b(?:в\s+)?({weekday_pattern})\b.*?\b(?:в|к)\s+(\d{{1,2}})(?::(\d{{2}})|[.](\d{{2}}))?",
+        rf"\b(?:(?:в|во)\s+)?({weekday_pattern})\b.*?\b(?:в|к)\s+(\d{{1,2}})(?::(\d{{2}})|[.](\d{{2}}))?",
         text,
         re.IGNORECASE,
     )
@@ -274,6 +278,26 @@ def _parse_weekday_with_time(text: str, now: datetime) -> tuple[str, datetime] |
     return match.group(0), remind_at
 
 
+def _parse_weekday_date(text: str, now: datetime) -> tuple[str, datetime] | None:
+    weekday_pattern = "|".join(WEEKDAYS)
+    match = re.search(
+        rf"\b(?:(?:в|во)\s+)?({weekday_pattern})\b",
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    weekday_text = match.group(1).lower()
+    target_weekday = WEEKDAYS[weekday_text]
+    days_ahead = (target_weekday - now.weekday()) % 7
+    remind_at = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=days_ahead)
+    if remind_at <= now:
+        remind_at += timedelta(days=7)
+
+    return match.group(0), remind_at
+
+
 def _has_explicit_time(text: str) -> bool:
     return bool(
         re.search(r"\b\d{1,2}[:.]\d{2}\b", text)
@@ -284,6 +308,21 @@ def _has_explicit_time(text: str) -> bool:
         )
         or re.search(r"\b(утром|днем|днём|вечером|ночью|полдень|полночь)\b", text, re.IGNORECASE)
     )
+
+
+def _needs_time_clarification(full_text: str, matched_text: str, remind_at: datetime) -> bool:
+    if _has_explicit_time(matched_text):
+        return False
+
+    if _has_explicit_time(full_text):
+        return False
+
+    # dateparser silently turns date-only phrases like "в четверг" into 00:00.
+    # For reminders, midnight is almost never intended unless the user said it.
+    if remind_at.hour == 0 and remind_at.minute == 0:
+        return True
+
+    return True
 
 
 def _cleanup_task_text(text: str, matched_date_text: str) -> str:
