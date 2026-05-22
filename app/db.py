@@ -102,6 +102,55 @@ class ReminderRepository:
             await db.commit()
             return cursor.rowcount > 0
 
+    async def cancel_all(self, chat_id: int) -> list[int]:
+        reminders = await self.list_pending(chat_id)
+        if not reminders:
+            return []
+
+        reminder_ids = [item.id for item in reminders]
+        placeholders = ",".join("?" for _ in reminder_ids)
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                f"""
+                UPDATE reminders
+                SET status = 'cancelled'
+                WHERE chat_id = ? AND status = 'pending' AND id IN ({placeholders})
+                """,
+                (chat_id, *reminder_ids),
+            )
+            await db.commit()
+        return reminder_ids
+
+    async def cancel_last(self, chat_id: int) -> Reminder | None:
+        async with aiosqlite.connect(self.database_path) as db:
+            row = await db.execute_fetchone(
+                """
+                SELECT id, chat_id, text, remind_at, status, source_text
+                FROM reminders
+                WHERE chat_id = ? AND status = 'pending'
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (chat_id,),
+            )
+            if row is None:
+                return None
+
+            await db.execute(
+                "UPDATE reminders SET status = 'cancelled' WHERE id = ?",
+                (row[0],),
+            )
+            await db.commit()
+
+        return Reminder(
+            id=row[0],
+            chat_id=row[1],
+            text=row[2],
+            remind_at=datetime.fromisoformat(row[3]),
+            status="cancelled",
+            source_text=row[5],
+        )
+
     async def _set_status(self, reminder_id: int, status: str) -> None:
         async with aiosqlite.connect(self.database_path) as db:
             await db.execute(

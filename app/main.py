@@ -8,7 +8,12 @@ from aiogram.types import Message
 from app.config import Settings
 from app.config import load_settings
 from app.db import ReminderRepository
-from app.parser import ReminderNeedsClarification, apply_time_clarification, parse_reminder
+from app.parser import (
+    ReminderNeedsClarification,
+    apply_time_clarification,
+    is_time_clarification,
+    parse_reminder,
+)
 from app.scheduler import ReminderScheduler
 from app.transcribe import TranscriptionError, VoiceTranscriber
 
@@ -114,8 +119,11 @@ async def handle_text(
     pending_clarifications: dict[int, str],
 ) -> None:
     source_text = message.text or ""
+    if await handle_cancel_phrase(message, source_text, repo, scheduler, pending_clarifications):
+        return
+
     pending_text = pending_clarifications.get(message.chat.id)
-    if pending_text:
+    if pending_text and is_time_clarification(source_text):
         clarified_text = apply_time_clarification(pending_text, source_text)
         if clarified_text:
             saved = await create_reminder_from_text(
@@ -139,6 +147,42 @@ async def handle_text(
         settings.timezone,
         pending_clarifications,
     )
+
+
+async def handle_cancel_phrase(
+    message: Message,
+    source_text: str,
+    repo: ReminderRepository,
+    scheduler: ReminderScheduler,
+    pending_clarifications: dict[int, str],
+) -> bool:
+    normalized = " ".join(source_text.strip().lower().split())
+    if normalized == "отмени все напоминания":
+        reminder_ids = await repo.cancel_all(message.chat.id)
+        for reminder_id in reminder_ids:
+            scheduler.remove(reminder_id)
+        pending_clarifications.pop(message.chat.id, None)
+
+        if not reminder_ids:
+            await message.answer("Активных напоминаний нет.")
+            return True
+
+        await message.answer(f"Готово, отменил все активные напоминания: {len(reminder_ids)}.")
+        return True
+
+    if normalized == "отмени последнее напоминание":
+        reminder = await repo.cancel_last(message.chat.id)
+        pending_clarifications.pop(message.chat.id, None)
+
+        if reminder is None:
+            await message.answer("Активных напоминаний нет.")
+            return True
+
+        scheduler.remove(reminder.id)
+        await message.answer(f"Готово, отменил последнее напоминание: {reminder.text}")
+        return True
+
+    return False
 
 
 async def create_reminder_from_text(
