@@ -273,6 +273,10 @@ def _find_datetime(text: str, now: datetime, timezone_name: str) -> tuple[str, d
     if weekday_with_time:
         return weekday_with_time
 
+    relative_day_with_time = _parse_relative_day_with_time(text, now)
+    if relative_day_with_time:
+        return relative_day_with_time
+
     weekday_date = _parse_weekday_date(text, now)
     if weekday_date:
         return weekday_date
@@ -346,6 +350,33 @@ def _parse_weekday_with_time(text: str, now: datetime) -> tuple[str, datetime] |
     remind_at = now.replace(hour=hour, minute=minute, second=0, microsecond=0) + timedelta(days=days_ahead)
     if remind_at <= now:
         remind_at += timedelta(days=7)
+
+    return match.group(0), remind_at
+
+
+def _parse_relative_day_with_time(text: str, now: datetime) -> tuple[str, datetime] | None:
+    match = re.search(
+        r"\b(сегодня|завтра|послезавтра)\b.*?\b(?:в|к)\s+(\d{1,2})(?::(\d{2})|[.](\d{2}))?",
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    day_text = match.group(1).lower()
+    hour = int(match.group(2))
+    minute = int(match.group(3) or match.group(4) or 0)
+    if hour > 23 or minute > 59:
+        return None
+
+    days_ahead = {
+        "сегодня": 0,
+        "завтра": 1,
+        "послезавтра": 2,
+    }[day_text]
+    remind_at = now.replace(hour=hour, minute=minute, second=0, microsecond=0) + timedelta(days=days_ahead)
+    if remind_at <= now:
+        remind_at += timedelta(days=1)
 
     return match.group(0), remind_at
 
