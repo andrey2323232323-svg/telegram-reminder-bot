@@ -10,7 +10,7 @@ from app.config import load_settings
 from app.db import ReminderRepository
 from app.parser import parse_reminder
 from app.scheduler import ReminderScheduler
-from app.transcribe import VoiceTranscriber
+from app.transcribe import TranscriptionError, VoiceTranscriber
 
 
 router = Router()
@@ -84,6 +84,10 @@ async def handle_voice(
 
     try:
         text = await transcriber.transcribe_telegram_voice(message.bot, message.voice)
+    except TranscriptionError as exc:
+        logging.exception("Voice transcription failed")
+        await message.answer(str(exc))
+        return
     except Exception:
         logging.exception("Voice transcription failed")
         await message.answer("Не получилось расшифровать голосовое. Попробуй еще раз или напиши текстом.")
