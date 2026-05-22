@@ -56,6 +56,29 @@ def parse_reminder(raw_text: str, timezone_name: str) -> ParsedReminder | None:
     )
 
 
+def apply_time_clarification(original_text: str, time_text: str) -> str | None:
+    normalized_original = " ".join(original_text.strip().split())
+    normalized_time = " ".join(time_text.strip().split())
+    if not normalized_original or not normalized_time:
+        return None
+
+    match = re.match(
+        r"^(\s*(?:напомни(?:\s+мне)?|поставь\s+напоминание|создай\s+напоминание)\s+)(.+?)(\s*,?\s+что\s+.+)$",
+        normalized_original,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    reminder_prefix = match.group(1)
+    remind_clause = match.group(2).strip()
+    task_clause = match.group(3)
+    if not _has_explicit_time(normalized_time):
+        normalized_time = f"в {normalized_time}"
+
+    return f"{reminder_prefix}{remind_clause} {normalized_time}{task_clause}"
+
+
 def _parse_remind_clause_before_what(
     text: str,
     now: datetime,

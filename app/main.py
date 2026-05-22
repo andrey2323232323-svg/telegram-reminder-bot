@@ -8,7 +8,7 @@ from aiogram.types import Message
 from app.config import Settings
 from app.config import load_settings
 from app.db import ReminderRepository
-from app.parser import ReminderNeedsClarification, parse_reminder
+from app.parser import ReminderNeedsClarification, apply_time_clarification, parse_reminder
 from app.scheduler import ReminderScheduler
 from app.transcribe import TranscriptionError, VoiceTranscriber
 
@@ -77,6 +77,7 @@ async def handle_voice(
     repo: ReminderRepository,
     scheduler: ReminderScheduler,
     settings: Settings,
+    pending_clarifications: dict[int, str],
 ) -> None:
     if not transcriber.enabled:
         await message.answer("Голосовые пока не включены: нужно добавить OPENAI_API_KEY в .env.")
@@ -94,7 +95,14 @@ async def handle_voice(
         return
 
     await message.answer(f"Расшифровал, {display_name(message)}: {text}")
-    await create_reminder_from_text(message, text, repo, scheduler, settings.timezone)
+    await create_reminder_from_text(
+        message,
+        text,
+        repo,
+        scheduler,
+        settings.timezone,
+        pending_clarifications,
+    )
 
 
 @router.message(F.text)
@@ -103,8 +111,34 @@ async def handle_text(
     repo: ReminderRepository,
     scheduler: ReminderScheduler,
     settings: Settings,
+    pending_clarifications: dict[int, str],
 ) -> None:
-    await create_reminder_from_text(message, message.text or "", repo, scheduler, settings.timezone)
+    source_text = message.text or ""
+    pending_text = pending_clarifications.get(message.chat.id)
+    if pending_text:
+        clarified_text = apply_time_clarification(pending_text, source_text)
+        if clarified_text:
+            saved = await create_reminder_from_text(
+                message,
+                clarified_text,
+                repo,
+                scheduler,
+                settings.timezone,
+                pending_clarifications,
+                store_clarification=False,
+            )
+            if saved:
+                pending_clarifications.pop(message.chat.id, None)
+            return
+
+    await create_reminder_from_text(
+        message,
+        source_text,
+        repo,
+        scheduler,
+        settings.timezone,
+        pending_clarifications,
+    )
 
 
 async def create_reminder_from_text(
@@ -113,19 +147,23 @@ async def create_reminder_from_text(
     repo: ReminderRepository,
     scheduler: ReminderScheduler,
     timezone: str,
-) -> None:
+    pending_clarifications: dict[int, str],
+    store_clarification: bool = True,
+) -> bool:
     try:
         parsed = parse_reminder(source_text, timezone)
     except ReminderNeedsClarification as exc:
+        if store_clarification:
+            pending_clarifications[message.chat.id] = source_text
         await message.answer(exc.message)
-        return
+        return False
 
     if parsed is None:
         await message.answer(
             "Я не понял дату и время. Попробуй так: `завтра в 10:30 позвонить врачу`.",
             parse_mode="Markdown",
         )
-        return
+        return False
 
     reminder = await repo.add(
         chat_id=message.chat.id,
@@ -140,6 +178,7 @@ async def create_reminder_from_text(
         f"Напомню: {format_dt(reminder.remind_at)}\n"
         f"ID: {reminder.id}"
     )
+    return True
 
 
 async def main() -> None:
@@ -157,6 +196,7 @@ async def main() -> None:
         settings=settings,
         repo=repo,
         scheduler=scheduler,
+        pending_clarifications={},
         transcriber=VoiceTranscriber(
             api_key=settings.openai_api_key,
             model=settings.openai_transcribe_model,
