@@ -20,10 +20,18 @@ def format_dt(value) -> str:
     return value.strftime("%d.%m.%Y %H:%M")
 
 
+def display_name(message: Message) -> str:
+    user = message.from_user
+    if user is None:
+        return "друг"
+    return user.first_name or user.full_name or "друг"
+
+
 @router.message(CommandStart())
 async def start(message: Message) -> None:
+    name = display_name(message)
     await message.answer(
-        "Привет. Напиши дело с датой и временем, а я напомню.\n\n"
+        f"Привет, {name}. Напиши дело с датой и временем, а я напомню.\n\n"
         "Примеры:\n"
         "завтра в 10:30 позвонить врачу\n"
         "через 2 часа проверить духовку\n\n"
@@ -81,7 +89,7 @@ async def handle_voice(
         await message.answer("Не получилось расшифровать голосовое. Попробуй еще раз или напиши текстом.")
         return
 
-    await message.answer(f"Расшифровал: {text}")
+    await message.answer(f"Расшифровал, {display_name(message)}: {text}")
     await create_reminder_from_text(message, text, repo, scheduler, settings.timezone)
 
 
@@ -119,7 +127,7 @@ async def create_reminder_from_text(
     scheduler.schedule(reminder)
 
     await message.answer(
-        f"Запомнил: {reminder.text}\n"
+        f"Запомнил, {display_name(message)}: {reminder.text}\n"
         f"Напомню: {format_dt(reminder.remind_at)}\n"
         f"ID: {reminder.id}"
     )
