@@ -22,4 +22,4 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
           ssh -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" \
-            "cd $APP_DIR && git pull --ff-only && docker compose up -d --build"
+            "cd $APP_DIR && git pull --ff-only origin main && docker compose up -d --build"
