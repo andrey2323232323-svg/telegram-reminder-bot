@@ -8,7 +8,7 @@ from aiogram.types import Message
 from app.config import Settings
 from app.config import load_settings
 from app.db import ReminderRepository
-from app.parser import parse_reminder
+from app.parser import ReminderNeedsClarification, parse_reminder
 from app.scheduler import ReminderScheduler
 from app.transcribe import TranscriptionError, VoiceTranscriber
 
@@ -35,7 +35,7 @@ async def start(message: Message) -> None:
         "Примеры:\n"
         "завтра в 10:30 позвонить врачу\n"
         "через 2 часа проверить духовку\n\n"
-        "Голосовые тоже можно отправлять, если настроен OPENAI_API_KEY."
+        "Голосовые тоже можно отправлять."
     )
 
 
@@ -114,7 +114,12 @@ async def create_reminder_from_text(
     scheduler: ReminderScheduler,
     timezone: str,
 ) -> None:
-    parsed = parse_reminder(source_text, timezone)
+    try:
+        parsed = parse_reminder(source_text, timezone)
+    except ReminderNeedsClarification as exc:
+        await message.answer(exc.message)
+        return
+
     if parsed is None:
         await message.answer(
             "Я не понял дату и время. Попробуй так: `завтра в 10:30 позвонить врачу`.",

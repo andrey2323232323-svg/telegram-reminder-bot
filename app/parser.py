@@ -13,6 +13,12 @@ class ParsedReminder:
     matched_date_text: str
 
 
+class ReminderNeedsClarification(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
 FILLER_PATTERNS = [
     r"^\s*напомни(?:\s+мне)?\s+",
     r"^\s*поставь\s+напоминание\s+",
@@ -27,6 +33,10 @@ def parse_reminder(raw_text: str, timezone_name: str) -> ParsedReminder | None:
 
     tz = ZoneInfo(timezone_name)
     now = datetime.now(tz)
+    clause_reminder = _parse_remind_clause_before_what(normalized, now, timezone_name)
+    if clause_reminder:
+        return clause_reminder
+
     dt = _find_datetime(normalized, now, timezone_name)
     if dt is None:
         return None
@@ -41,6 +51,44 @@ def parse_reminder(raw_text: str, timezone_name: str) -> ParsedReminder | None:
 
     return ParsedReminder(
         text=reminder_text,
+        remind_at=remind_at,
+        matched_date_text=matched_text,
+    )
+
+
+def _parse_remind_clause_before_what(
+    text: str,
+    now: datetime,
+    timezone_name: str,
+) -> ParsedReminder | None:
+    match = re.match(
+        r"^\s*(?:напомни(?:\s+мне)?|поставь\s+напоминание|создай\s+напоминание)\s+(.+?)\s*,?\s+что\s+(.+)$",
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    remind_clause = match.group(1).strip()
+    task_text = match.group(2).strip(" ,.-")
+    if not remind_clause:
+        return None
+
+    dt = _find_datetime(remind_clause, now, timezone_name)
+    if dt is None:
+        return None
+
+    matched_text, remind_at = dt
+    if not _has_explicit_time(remind_clause):
+        raise ReminderNeedsClarification(
+            f"В какое время {remind_clause} вы хотите, чтобы я напомнил?"
+        )
+
+    if remind_at <= now:
+        return None
+
+    return ParsedReminder(
+        text=task_text,
         remind_at=remind_at,
         matched_date_text=matched_text,
     )
@@ -93,6 +141,18 @@ def _parse_relative(text: str, now: datetime) -> tuple[str, datetime] | None:
         delta = timedelta(weeks=amount)
 
     return match.group(0), now + delta
+
+
+def _has_explicit_time(text: str) -> bool:
+    return bool(
+        re.search(r"\b\d{1,2}[:.]\d{2}\b", text)
+        or re.search(
+            r"\b(?:в|к|на)\s+\d{1,2}\s*(?:час(?:а|ов)?|утра|дня|вечера|ночи)?\b",
+            text,
+            re.IGNORECASE,
+        )
+        or re.search(r"\b(утром|днем|днём|вечером|ночью|полдень|полночь)\b", text, re.IGNORECASE)
+    )
 
 
 def _cleanup_task_text(text: str, matched_date_text: str) -> str:
